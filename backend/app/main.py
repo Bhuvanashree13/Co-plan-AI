@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import os
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -8,13 +7,15 @@ from typing import Any
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 
 from .storage import connect, init_db, seed_demo
 
-SECRET_KEY = "development-secret"
+SECRET_KEY = os.getenv("JWT_SECRET", "development-secret")
 ALGORITHM = "HS256"
 
 app = FastAPI(
@@ -23,13 +24,30 @@ app = FastAPI(
     version="2.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    cors_list = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:8000",
+            "http://localhost:8000",
+        ],
+        allow_origin_regex=r"https://.*\.run\.app",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -126,7 +144,6 @@ def current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any]:
 
 @app.on_event("startup")
 def startup() -> None:
-    Path("backend").mkdir(exist_ok=True)
     init_db()
     seed_demo(hash_password("demo1234"))
 
@@ -712,3 +729,27 @@ def analytics() -> dict[str, Any]:
             {"agent_name": "Insight Agent", "count": 2},
         ],
     }
+
+
+# Static files & SPA catch-all (mounted after all /api routes)
+FRONTEND_DIST = Path(os.getenv(
+    "FRONTEND_DIST",
+    str(Path(__file__).resolve().parents[2] / "frontend" / "dist"),
+))
+
+if FRONTEND_DIST.is_dir():
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        file_path = FRONTEND_DIST / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(file_path)
+        index_file = FRONTEND_DIST / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
+        raise HTTPException(status_code=404, detail="Frontend index.html not found")

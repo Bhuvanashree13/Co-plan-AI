@@ -66,3 +66,37 @@ Open `http://127.0.0.1:5173` in your browser.
 - **Email**: `demo@coplan.ai`
 - **Password**: `demo1234`
 *(Seed data initializes automatically with Maya, Priya, Arjun, Nila, and Rohan)*
+
+---
+
+## Deploy to Google Cloud Run
+
+CoPlan AI is containerized as a unified, production-ready container (FastAPI serving the compiled React/Vite SPA).
+
+### Option A: Using Google Cloud SDK (`gcloud`)
+
+1. **Authenticate and set project**:
+   ```bash
+   gcloud auth login
+   gcloud config set project YOUR_GCP_PROJECT_ID
+   gcloud services enable run.googleapis.com cloudbuild.googleapis.com
+   ```
+
+2. **Deploy directly from source**:
+   ```bash
+   gcloud run deploy coplan-ai \
+     --source . \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars "JWT_SECRET=your-production-secret"
+   ```
+
+### Option B: Using Google Cloud Console (No CLI needed)
+
+1. Push your repository to **GitHub**.
+2. Open [Google Cloud Run Console](https://console.cloud.google.com/run).
+3. Click **"Deploy container"** -> **"Service"** -> select **"Continuously deploy from a repository"**.
+4. Connect your GitHub repository and select `Dockerfile` at the root.
+5. Under **Authentication**, select **"Allow unauthenticated invocations"**.
+6. Click **Create** to deploy.
+

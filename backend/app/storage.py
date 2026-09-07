@@ -1,13 +1,14 @@
-from __future__ import annotations
-
+import os
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[1] / "coplan.db"
+DB_ENV = os.getenv("DATABASE_PATH")
+DB_PATH = Path(DB_ENV) if DB_ENV else Path(__file__).resolve().parents[1] / "coplan.db"
 
 
 def connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     return db
