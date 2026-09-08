@@ -103,6 +103,31 @@ class CheckInMessage(BaseModel):
     suggested_action: str | None = None
 
 
+class SwitchPersonaRequest(BaseModel):
+    user_id: int
+
+
+class ApplyDailyPlanRequest(BaseModel):
+    task_ids: list[int]
+
+
+class RebalanceRequest(BaseModel):
+    task_id: int
+    new_owner_id: int
+    pairing_note: str | None = None
+
+
+class ResolveBlockerRequest(BaseModel):
+    resolution_note: str = ""
+
+
+class UpdateSettingsRequest(BaseModel):
+    working_hours: str | None = None
+    quiet_hours_start: str | None = None
+    quiet_hours_end: str | None = None
+    timezone: str | None = None
+
+
 def row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row) if row is not None else {}
 
@@ -195,6 +220,16 @@ def login(payload: LoginRequest) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user = row_to_dict(row)
     return {"token": create_token(user), "user": user}
+
+
+@app.post("/api/auth/switch-persona")
+def switch_persona(payload: SwitchPersonaRequest) -> dict[str, Any]:
+    with connect() as db:
+        user = db.execute("SELECT * FROM users WHERE id = ?", (payload.user_id,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_dict = row_to_dict(user)
+    return {"token": create_token(user_dict), "user": user_dict}
 
 
 @app.get("/api/auth/me")
@@ -366,6 +401,145 @@ def daily_plan(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         "requires_human_approval": True,
         "governance_rule": "Control Principle: Recommendations do not mutate schedules until approved.",
     }
+
+
+@app.post("/api/ai/daily-plan/apply")
+def apply_daily_plan(payload: ApplyDailyPlanRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    with connect() as db:
+        for index, task_id in enumerate(payload.task_ids):
+            db.execute(
+                """
+                UPDATE tasks
+                SET ai_priority_score = MAX(ai_priority_score, 8.5) - (? * 0.1),
+                    status = CASE WHEN status = 'To Do' THEN 'In Progress' ELSE status END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (index, datetime.utcnow().isoformat(), task_id),
+            )
+        db.execute(
+            """
+            INSERT INTO ai_recommendations (
+                user_id, agent_name, recommendation_type, proposed_change,
+                explanation, confidence, status, decision_note, reviewed_at
+            )
+            VALUES (?, 'Planning Agent', 'Schedule Activation', ?, ?, 0.95, 'Accepted', 'Approved and applied by user to active schedule.', ?)
+            """,
+            (
+                user["id"],
+                f"Activated {len(payload.task_ids)} focus tasks for today's work block.",
+                f"User {user['name']} explicitly approved the Planning Agent's recommended daily focus queue.",
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        db.commit()
+    return {"status": "applied", "applied_count": len(payload.task_ids)}
+
+
+@app.post("/api/team/rebalance")
+def rebalance_task(payload: RebalanceRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    with connect() as db:
+        task = db.execute("SELECT * FROM task_view WHERE id = ?", (payload.task_id,)).fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        new_owner = db.execute("SELECT * FROM users WHERE id = ?", (payload.new_owner_id,)).fetchone()
+        if not new_owner:
+            raise HTTPException(status_code=404, detail="Target user not found")
+
+        old_owner_name = task["owner_name"]
+        new_owner_name = new_owner["name"]
+        pairing_note = payload.pairing_note or f"Rebalanced from {old_owner_name} to {new_owner_name} based on cognitive equity."
+
+        db.execute(
+            "UPDATE tasks SET owner_id = ?, updated_at = ? WHERE id = ?",
+            (payload.new_owner_id, datetime.utcnow().isoformat(), payload.task_id),
+        )
+        db.execute(
+            """
+            INSERT INTO ai_recommendations (
+                user_id, task_id, agent_name, recommendation_type, proposed_change,
+                explanation, confidence, status, decision_note, reviewed_at
+            )
+            VALUES (?, ?, 'Workload Agent', 'Task Delegation / Pairing', ?, ?, 0.94, 'Accepted', ?, ?)
+            """,
+            (
+                user["id"],
+                payload.task_id,
+                f"Reassigned '{task['title']}' to {new_owner_name}.",
+                f"Workload Agent detected cognitive load disparity. {pairing_note}",
+                f"Approved by {user['name']}.",
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        db.commit()
+        updated_task = db.execute("SELECT * FROM task_view WHERE id = ?", (payload.task_id,)).fetchone()
+    return row_to_dict(updated_task)
+
+
+@app.post("/api/tasks/{task_id}/resolve-blocker")
+def resolve_blocker(task_id: int, payload: ResolveBlockerRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    with connect() as db:
+        task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        db.execute(
+            """
+            UPDATE tasks
+            SET status = 'In Progress', blocker_details = '', updated_at = ?
+            WHERE id = ?
+            """,
+            (datetime.utcnow().isoformat(), task_id),
+        )
+        db.execute(
+            """
+            INSERT INTO notifications (user_id, title, body, category)
+            VALUES (?, 'Blocker Resolved', ?, 'blocker')
+            """,
+            (
+                user["id"],
+                f"Blocker on '{task['title']}' resolved by {user['name']}: {payload.resolution_note or 'Unblocked'}",
+            ),
+        )
+        db.commit()
+        updated_task = db.execute("SELECT * FROM task_view WHERE id = ?", (task_id,)).fetchone()
+    return row_to_dict(updated_task)
+
+
+@app.get("/api/audit-logs")
+def audit_logs(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT * FROM ai_recommendations
+            WHERE status IN ('Accepted', 'Modified', 'Rejected')
+            ORDER BY COALESCE(reviewed_at, created_at) DESC
+            LIMIT 50
+            """
+        ).fetchall()
+        return rows_to_list(rows)
+
+
+@app.patch("/api/user/settings")
+def update_settings(payload: UpdateSettingsRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if payload.working_hours is not None:
+        updates["working_hours"] = payload.working_hours
+    if payload.quiet_hours_start is not None:
+        updates["quiet_hours_start"] = payload.quiet_hours_start
+    if payload.quiet_hours_end is not None:
+        updates["quiet_hours_end"] = payload.quiet_hours_end
+    if payload.timezone is not None:
+        updates["timezone"] = payload.timezone
+
+    if updates:
+        set_clause = ", ".join([f"{k} = ?" for k in updates])
+        values = list(updates.values()) + [user["id"]]
+        with connect() as db:
+            db.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+            db.commit()
+            updated_user = db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+            return row_to_dict(updated_user)
+    return user
 
 
 @app.get("/api/ai/recommendations")

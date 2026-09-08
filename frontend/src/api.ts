@@ -93,4 +93,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message, completion_status, blocker_category, permission_to_share, ...extra }),
     }),
+  deleteTask: (id: number) => request<{ status: string }>(`/api/tasks/${id}`, { method: 'DELETE' }),
+  switchPersona: (user_id: number) =>
+    request<{ token: string; user: Bootstrap['user'] }>('/api/auth/switch-persona', {
+      method: 'POST',
+      body: JSON.stringify({ user_id }),
+    }),
+  applyDailyPlan: (task_ids: number[]) =>
+    request<{ status: string; applied_count: number }>('/api/ai/daily-plan/apply', {
+      method: 'POST',
+      body: JSON.stringify({ task_ids }),
+    }),
+  rebalanceTask: (task_id: number, new_owner_id: number, pairing_note?: string) =>
+    request<Task>('/api/team/rebalance', {
+      method: 'POST',
+      body: JSON.stringify({ task_id, new_owner_id, pairing_note }),
+    }),
+  resolveBlocker: (task_id: number, resolution_note?: string) =>
+    request<Task>(`/api/tasks/${task_id}/resolve-blocker`, {
+      method: 'POST',
+      body: JSON.stringify({ resolution_note }),
+    }),
+  getAuditLogs: () => request<Recommendation[]>('/api/audit-logs'),
+  updateSettings: (settings: { working_hours?: string; quiet_hours_start?: string; quiet_hours_end?: string; timezone?: string }) =>
+    request<Bootstrap['user']>('/api/user/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    }),
 };

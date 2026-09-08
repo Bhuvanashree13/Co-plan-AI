@@ -44,6 +44,8 @@ export type Recommendation = {
   schedule_impact?: string;
   required_resource?: string;
   suggested_action?: string;
+  created_at?: string;
+  reviewed_at?: string;
 };
 
 export type Notification = {
