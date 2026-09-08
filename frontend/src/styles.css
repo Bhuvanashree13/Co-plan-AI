@@ -491,19 +491,43 @@ textarea:focus {
 }
 
 .board {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(230px, 1fr));
-  gap: 14px;
+  display: flex;
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: 16px;
+  align-items: flex-start;
+  scroll-snap-type: x proximity;
 }
 
 .column {
-  min-width: 230px;
-  padding: 12px;
+  flex: 0 0 295px;
+  width: 295px;
+  min-width: 295px;
+  padding: 14px;
   border: 1px solid #dde6df;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #eef3ef;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  scroll-snap-align: start;
+}
+
+.column::-webkit-scrollbar {
+  width: 6px;
+}
+
+.column::-webkit-scrollbar-thumb {
+  background: #cbd7d0;
+  border-radius: 99px;
+}
+
+.board::-webkit-scrollbar {
+  height: 8px;
+}
+
+.board::-webkit-scrollbar-thumb {
+  background: #cbd7d0;
+  border-radius: 99px;
 }
 
 .column-title {
@@ -522,6 +546,8 @@ textarea:focus {
   gap: 10px;
   margin-bottom: 12px;
   padding: 14px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(20, 40, 35, 0.05);
 }
 
 .task-card p {
@@ -532,7 +558,21 @@ textarea:focus {
 .task-head {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 10px;
+}
+
+.task-head h3 {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.35;
+  word-break: break-word;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-head .priority {
+  flex-shrink: 0;
 }
 
 .task-row,
@@ -583,15 +623,16 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 72px;
-  height: 28px;
-  padding: 0 9px;
+  min-width: 58px;
+  height: 26px;
+  padding: 0 8px;
   border-radius: 999px;
   color: #34423d;
   background: #edf1ee;
   font-size: 0.78rem;
   font-weight: 800;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .status.blocked {
@@ -631,7 +672,9 @@ textarea:focus {
   border-radius: 8px;
   color: #842916;
   background: #ffe9e1;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .planner-list,
@@ -1257,16 +1300,49 @@ progress::-webkit-progress-value {
   font-size: 0.86rem;
 }
 
-/* Filter & Search Toolbar */
+/* Tasks Toolbar & Filtering */
+.tasks-toolbar,
 .filter-bar {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #dce4de;
+  box-shadow: 0 2px 6px rgba(10, 30, 26, 0.03);
+}
+
+.tasks-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.tasks-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f4f1;
+}
+
+.tasks-view-switch {
+  display: flex;
   align-items: center;
-  background: #fff;
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid #dce4de;
+  gap: 12px;
+}
+
+.tasks-count-pill {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #556862;
+  background: #edf3f0;
+  padding: 4px 10px;
+  border-radius: 999px;
 }
 
 .search-box {
@@ -1312,8 +1388,9 @@ progress::-webkit-progress-value {
   padding: 6px 10px;
   border-radius: 6px;
   background: #fdf5f2;
+  white-space: nowrap;
 }
-.friction-toggle input { width: auto; }
+.friction-toggle input { width: auto; margin: 0; }
 
 /* Modal & Dialog System */
 .modal-backdrop {
@@ -1431,7 +1508,8 @@ progress::-webkit-progress-value {
 .task-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px dashed #e2eae5;
@@ -1441,15 +1519,17 @@ progress::-webkit-progress-value {
   background: #f2f7f4;
   border: 1px solid #d9e4de;
   color: #2b3d37;
-  padding: 5px 9px;
+  padding: 5px 8px;
   border-radius: 6px;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-icon:hover {
   background: #e2ede7;

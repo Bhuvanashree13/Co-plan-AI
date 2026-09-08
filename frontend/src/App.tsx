@@ -660,70 +660,84 @@ function Tasks({
   return (
     <div className="stack">
       {/* Search & Filter Toolbar */}
-      <div className="filter-bar">
-        <div className="search-box">
-          <Search size={16} />
-          <input
-            type="text"
-            placeholder="Search tasks, skills, descriptions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <div className="tasks-toolbar">
+        <div className="tasks-toolbar-filters">
+          <div className="search-box">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Search tasks, skills, descriptions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <select
+            className="filter-select"
+            value={selectedOwner}
+            onChange={(e) => setSelectedOwner(e.target.value)}
+          >
+            <option value="all">All Assignees</option>
+            {data.users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+
+          <select
+            className="filter-select"
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+          >
+            <option value="all">All Statuses</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          <select
+            className="filter-select"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+          >
+            <option value="priority">Sort: AI Priority Score</option>
+            <option value="due">Sort: Due Date</option>
+            <option value="cognitive">Sort: Cognitive Load</option>
+            <option value="complexity">Sort: Complexity</option>
+          </select>
+
+          <label className="friction-toggle">
+            <input
+              type="checkbox"
+              checked={frictionOnly}
+              onChange={(e) => setFrictionOnly(e.target.checked)}
+            />
+            Friction / Blockers Only
+          </label>
         </div>
 
-        <select
-          className="filter-select"
-          value={selectedOwner}
-          onChange={(e) => setSelectedOwner(e.target.value)}
-        >
-          <option value="all">All Assignees</option>
-          {data.users.map((u) => (
-            <option key={u.id} value={u.id}>{u.name}</option>
-          ))}
-        </select>
+        <div className="tasks-toolbar-actions">
+          <div className="tasks-view-switch">
+            <div className="segmented compact">
+              {(['board', 'list', 'calendar', 'priority'] as const).map((item) => (
+                <button
+                  key={item}
+                  className={mode === item ? 'active' : ''}
+                  onClick={() => setMode(item)}
+                  style={{ textTransform: 'capitalize' }}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <span className="tasks-count-pill">
+              {filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}
+            </span>
+          </div>
 
-        <select
-          className="filter-select"
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          {statuses.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        <select
-          className="filter-select"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-        >
-          <option value="priority">Sort: AI Priority Score</option>
-          <option value="due">Sort: Due Date</option>
-          <option value="cognitive">Sort: Cognitive Load</option>
-          <option value="complexity">Sort: Complexity</option>
-        </select>
-
-        <label className="friction-toggle">
-          <input
-            type="checkbox"
-            checked={frictionOnly}
-            onChange={(e) => setFrictionOnly(e.target.checked)}
-          />
-          Friction / Blockers Only
-        </label>
-
-        <div className="segmented compact" style={{ marginLeft: 'auto' }}>
-          {(['board', 'list', 'calendar', 'priority'] as const).map((item) => (
-            <button key={item} className={mode === item ? 'active' : ''} onClick={() => setMode(item)}>
-              {item}
-            </button>
-          ))}
+          <button className="primary" onClick={onOpenNewTask}>
+            <Plus size={18} /> New task
+          </button>
         </div>
-
-        <button className="primary" onClick={onOpenNewTask}>
-          <Plus size={18} /> New task
-        </button>
       </div>
 
       {/* Board Mode */}
