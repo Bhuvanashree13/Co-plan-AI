@@ -900,7 +900,7 @@ function Planner({ data, refresh, showToast }: { data: Bootstrap; refresh: () =>
 
   useEffect(() => {
     generate();
-  }, []);
+  }, [data.user.id]);
 
   async function handleApplyPlan() {
     if (!plan?.plan || plan.plan.length === 0) return;

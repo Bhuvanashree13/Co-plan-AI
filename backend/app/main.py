@@ -384,12 +384,25 @@ def prioritize(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, A
 @app.post("/api/ai/daily-plan")
 def daily_plan(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     with connect() as db:
-        tasks = rows_to_list(
+        # Prioritize the active persona's assigned tasks
+        user_tasks = rows_to_list(
             db.execute(
-                "SELECT * FROM task_view WHERE status != 'Completed' ORDER BY ai_priority_score DESC LIMIT 6"
+                "SELECT * FROM task_view WHERE owner_id = ? AND status != 'Completed' ORDER BY ai_priority_score DESC LIMIT 6",
+                (user["id"],),
             ).fetchall()
         )
-    focus_tasks = tasks[:4]
+        if user_tasks:
+            focus_tasks = user_tasks[:4]
+            persona_label = f"{user.get('name', 'Team Member')}'s focus queue"
+        else:
+            team_tasks = rows_to_list(
+                db.execute(
+                    "SELECT * FROM task_view WHERE status != 'Completed' ORDER BY ai_priority_score DESC LIMIT 6"
+                ).fetchall()
+            )
+            focus_tasks = team_tasks[:4]
+            persona_label = f"Team focus queue for {user.get('name', 'Team Leader')}"
+
     total_hours = sum(float(task["estimated_hours"]) for task in focus_tasks)
     avg_cog_load = (
         round(sum(int(task.get("cognitive_load", 3)) for task in focus_tasks) / len(focus_tasks), 1)
@@ -399,7 +412,7 @@ def daily_plan(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
     plan_items = [priority_explanation(task, index + 1) for index, task in enumerate(focus_tasks)]
 
-    # If Gemini is active, enrich plan with generative reasoning
+    # If Gemini is active, enrich plan with generative reasoning tailored to this persona
     gemini_reasons = gemini_service.generate_daily_plan_reasoning(focus_tasks, user.get("name", "Team Member"))
     if gemini_reasons:
         reason_map = {item.get("task_id"): item for item in gemini_reasons if isinstance(item, dict)}
@@ -416,7 +429,7 @@ def daily_plan(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
     engine_info = gemini_service.get_engine_info()
     return {
-        "summary": f"Focus plan prepared by {engine_info['provider']}: {len(focus_tasks)} high-impact tasks ({total_hours:.1f} hours). Average cognitive load is {avg_cog_load}/5.0. Requires your explicit approval to apply.",
+        "summary": f"Focus plan for {persona_label} prepared by {engine_info['provider']}: {len(focus_tasks)} personalized tasks ({total_hours:.1f} hours, Avg cognitive load: {avg_cog_load}/5.0).",
         "plan": plan_items,
         "agent": "Planning Agent",
         "engine": engine_info,
