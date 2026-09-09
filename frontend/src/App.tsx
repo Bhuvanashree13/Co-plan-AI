@@ -216,6 +216,19 @@ function App() {
               </select>
             </div>
 
+            {/* AI Engine Status Pill */}
+            <div
+              className={`ai-engine-pill ${data.ai_engine?.active ? 'gemini-active' : 'care-fallback'}`}
+              title={
+                data.ai_engine?.active
+                  ? `Google Gemini Active (${data.ai_engine.model}) · Generative Reasoning Mode`
+                  : 'CARE Algorithmic Co-Pilot · Deterministic Fallback Mode (Supply GEMINI_API_KEY to activate Gemini)'
+              }
+            >
+              <Sparkles size={14} className={data.ai_engine?.active ? 'gemini-sparkle' : ''} />
+              <span>{data.ai_engine?.active ? 'Gemini 2.5 Flash' : 'CARE Engine'}</span>
+            </div>
+
             <div className="signal" title="Pending Agent Recommendations">
               <Bell size={17} />
               <span>{data.notifications.length} alerts</span>
@@ -269,7 +282,7 @@ function App() {
             showToast={showToast}
           />
         )}
-        {view === 'settings' && <Settings user={data.user} refresh={refresh} showToast={showToast} />}
+        {view === 'settings' && <Settings user={data.user} aiEngine={data.ai_engine} refresh={refresh} showToast={showToast} />}
       </main>
 
       {/* Task Modal (Create & Edit) */}
@@ -1480,7 +1493,17 @@ function Progress({ analytics }: { analytics: Analytics | null }) {
 // --------------------------------------------------------------------------
 // Settings with Database Persistence
 // --------------------------------------------------------------------------
-function Settings({ user, refresh, showToast }: { user: User; refresh: () => Promise<void>; showToast: (msg: string, type?: Toast['type']) => void }) {
+function Settings({
+  user,
+  aiEngine,
+  refresh,
+  showToast,
+}: {
+  user: User;
+  aiEngine?: Bootstrap['ai_engine'];
+  refresh: () => Promise<void>;
+  showToast: (msg: string, type?: Toast['type']) => void;
+}) {
   const [workingHours, setWorkingHours] = useState('09:00-17:00');
   const [quietStart, setQuietStart] = useState('21:00');
   const [quietEnd, setQuietEnd] = useState('08:00');
@@ -1529,6 +1552,30 @@ function Settings({ user, refresh, showToast }: { user: User; refresh: () => Pro
             <strong>Zero-Surveillance Guarantee:</strong>
             <span>All AI inferences are designed to support human workload balance, never to calculate punitive performance ranking.</span>
           </div>
+        </div>
+      </Panel>
+      <Panel title="AI Reasoning Engine (Google Gemini & Fallback)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div
+            className={`ai-engine-pill ${aiEngine?.active ? 'gemini-active' : 'care-fallback'}`}
+            style={{ fontSize: '0.84rem', padding: '6px 14px' }}
+          >
+            <Sparkles size={15} className={aiEngine?.active ? 'gemini-sparkle' : ''} />
+            <span>{aiEngine?.active ? `Google Gemini (${aiEngine.model})` : 'CARE Algorithmic Co-Pilot'}</span>
+          </div>
+          <span style={{ fontSize: '0.82rem', color: aiEngine?.active ? '#0d5f58' : '#556862', fontWeight: 600 }}>
+            {aiEngine?.active ? '● Live Generative Mode' : '● Deterministic Fallback Active'}
+          </span>
+        </div>
+
+        <div style={{ fontSize: '0.84rem', color: '#384e46', lineHeight: 1.5, marginBottom: 12 }}>
+          <strong>Zero-Downtime Fallback Architecture:</strong> CoPlan AI calls Google Gemini when a <code>GEMINI_API_KEY</code> is provided. If omitted or unreachable, it gracefully runs the deterministic CARE algorithms with zero downtime.
+        </div>
+
+        <div style={{ background: '#f6f9f7', padding: '10px 14px', borderRadius: 8, fontSize: '0.8rem', color: '#445650', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div><strong>Provider:</strong> {aiEngine?.provider ?? 'CARE Algorithmic Co-Pilot'}</div>
+          <div><strong>Model / Ruleset:</strong> {aiEngine?.model ?? 'CARE-v2-Deterministic'}</div>
+          <div><strong>Deployment Key:</strong> {aiEngine?.active ? 'Configured (Live API active)' : 'Unset (Running local heuristics)'}</div>
         </div>
       </Panel>
       <Panel title="Account & Active Profile">

@@ -102,4 +102,10 @@ export type Bootstrap = {
   notifications: Notification[];
   care_principles?: Record<string, string>;
   agents?: AgentInfo[];
+  ai_engine?: {
+    active: boolean;
+    provider: string;
+    model: string;
+    mode: string;
+  };
 };

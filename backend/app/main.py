@@ -14,6 +14,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 
 from .storage import connect, init_db, seed_demo
+from . import gemini_service
 
 SECRET_KEY = os.getenv("JWT_SECRET", "development-secret")
 ALGORITHM = "HS256"
@@ -271,6 +272,7 @@ def bootstrap(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
                 {"name": "Communication Agent", "role": "Governs notification timing, gentle phrasing, and quiet hours.", "status": "Active"},
                 {"name": "Insight Agent", "role": "Synthesizes team coordination patterns without individual surveillance scoring.", "status": "Active"},
             ],
+            "ai_engine": gemini_service.get_engine_info(),
         }
 
 
@@ -394,10 +396,30 @@ def daily_plan(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         if focus_tasks
         else 0
     )
+
+    plan_items = [priority_explanation(task, index + 1) for index, task in enumerate(focus_tasks)]
+
+    # If Gemini is active, enrich plan with generative reasoning
+    gemini_reasons = gemini_service.generate_daily_plan_reasoning(focus_tasks, user.get("name", "Team Member"))
+    if gemini_reasons:
+        reason_map = {item.get("task_id"): item for item in gemini_reasons if isinstance(item, dict)}
+        for p in plan_items:
+            t_id = p["task_id"]
+            if t_id in reason_map:
+                g_item = reason_map[t_id]
+                if g_item.get("reason"):
+                    p["reason"] = g_item["reason"]
+                if g_item.get("proposed_action"):
+                    p["proposed_action"] = g_item["proposed_action"]
+                if g_item.get("recommended_priority"):
+                    p["recommended_priority"] = g_item["recommended_priority"]
+
+    engine_info = gemini_service.get_engine_info()
     return {
-        "summary": f"Focus plan prepared by Planning Agent: {len(focus_tasks)} high-impact tasks ({total_hours:.1f} hours). Average cognitive load is {avg_cog_load}/5.0. Requires your explicit approval to apply.",
-        "plan": [priority_explanation(task, index + 1) for index, task in enumerate(focus_tasks)],
+        "summary": f"Focus plan prepared by {engine_info['provider']}: {len(focus_tasks)} high-impact tasks ({total_hours:.1f} hours). Average cognitive load is {avg_cog_load}/5.0. Requires your explicit approval to apply.",
+        "plan": plan_items,
         "agent": "Planning Agent",
+        "engine": engine_info,
         "requires_human_approval": True,
         "governance_rule": "Control Principle: Recommendations do not mutate schedules until approved.",
     }
@@ -448,7 +470,9 @@ def rebalance_task(payload: RebalanceRequest, user: dict[str, Any] = Depends(cur
 
         old_owner_name = task["owner_name"]
         new_owner_name = new_owner["name"]
-        pairing_note = payload.pairing_note or f"Rebalanced from {old_owner_name} to {new_owner_name} based on cognitive equity."
+        pairing_note = payload.pairing_note or gemini_service.generate_rebalance_note(
+            task["title"], old_owner_name, new_owner_name, task.get("cognitive_load", 4)
+        )
 
         db.execute(
             "UPDATE tasks SET owner_id = ?, updated_at = ? WHERE id = ?",
@@ -589,44 +613,24 @@ def start_checkin(payload: CheckInStart, user: dict[str, Any] = Depends(current_
 
 @app.post("/api/checkins/{task_id}/message")
 def checkin_message(task_id: int, payload: CheckInMessage, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    # Empathetic Blocker Agent inference loop:
-    # LISTEN -> UNDERSTAND -> REASON -> RECOMMEND -> HUMAN DECIDES
-    text = f"{payload.message} {payload.completion_status} {payload.blocker_category or ''}".lower()
-
-    # Determine friction type
-    if any(k in text for k in ["api", "access", "credential", "backend", "waiting", "blocked", "advisor", "team", "approval", "dependency"]):
-        friction_type = "External Dependency"
-        schedule_impact = "+1-2 days"
-        required_resource = "External credentials / Advisor sign-off"
-        suggested_action = "Reach out to dependency owner to unblock task and buffer downstream deadline."
-    elif any(k in text for k in ["difficult", "complex", "bug", "stuck", "error", "failing", "uncertainty"]):
-        friction_type = "Technical Complexity"
-        schedule_impact = "+2 days"
-        required_resource = "Senior engineer pairing (30 mins)"
-        suggested_action = "Schedule a 30-minute pairing session with a teammate to isolate the blocker."
-    elif any(k in text for k in ["unclear", "specification", "requirements", "scope", "design", "criteria"]):
-        friction_type = "Unclear Requirements"
-        schedule_impact = "+1 day"
-        required_resource = "Product lead clarification"
-        suggested_action = "Request a quick 10-minute scope alignment check before writing further code."
-    elif any(k in text for k in ["overload", "too much", "busy", "capacity", "hours", "exhausted", "support"]):
-        friction_type = "Capacity Overload"
-        schedule_impact = "+2-3 days"
-        required_resource = "Workload rebalance"
-        suggested_action = "Propose delegating secondary tasks to teammates with available capacity."
-    else:
-        friction_type = "Time Buffer"
-        schedule_impact = "+1 day"
-        required_resource = "Focus block"
-        suggested_action = "Allocate focused work window and snooze non-critical notifications."
-
-    friction_type = payload.friction_type or friction_type
-    schedule_impact = payload.schedule_impact or schedule_impact
-    required_resource = payload.required_resource or required_resource
-    suggested_action = payload.suggested_action or suggested_action
-
     with connect() as db:
         task = dict(db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone() or {})
+
+    # Empathetic Blocker Agent inference loop:
+    # Uses Gemini API if configured; falls back gracefully to deterministic CARE co-pilot
+    gemini_res = gemini_service.generate_empathetic_reply(
+        task_title=task.get("title", "Task"),
+        user_message=payload.message,
+        completion_status=payload.completion_status,
+        blocker_category=payload.blocker_category,
+    )
+
+    friction_type = payload.friction_type or gemini_res["friction_type"]
+    schedule_impact = payload.schedule_impact or gemini_res["schedule_impact"]
+    required_resource = payload.required_resource or gemini_res["required_resource"]
+    suggested_action = payload.suggested_action or gemini_res["suggested_action"]
+
+    with connect() as db:
         cur = db.execute(
             """
             INSERT INTO check_ins (
@@ -688,10 +692,7 @@ def checkin_message(task_id: int, payload: CheckInMessage, user: dict[str, Any] 
                     suggested_action,
                 ),
             )
-            reply = (
-                f"Blocker Agent: Friction understood ({friction_type}). Suggested Action: {suggested_action}. "
-                f"A recommendation was submitted to the Approval Center for human confirmation. ({privacy_note})"
-            )
+            reply = f"{gemini_res['reply']} ({privacy_note})"
         else:
             reply = "Blocker Agent: Update recorded safely in your coordination log."
 
@@ -707,6 +708,7 @@ def checkin_message(task_id: int, payload: CheckInMessage, user: dict[str, Any] 
             "required_resource": required_resource,
             "suggested_action": suggested_action,
             "permission_to_share": payload.permission_to_share,
+            "source": gemini_res.get("source", "fallback"),
         },
     }
 
